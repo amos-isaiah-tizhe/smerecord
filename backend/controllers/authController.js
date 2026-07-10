@@ -114,6 +114,17 @@ const login = async (req, res) => {
       return errorResponse(res, 'Invalid business name or password', 401);
     }
 
+    // In production, block users who have not verified their email address.
+    // In dev mode this check is skipped because register() auto-verifies the
+    // user so you can test without clicking an email link.
+    if (process.env.NODE_ENV === 'production' && !user.isVerified) {
+      return errorResponse(
+        res,
+        'Please verify your email before logging in. Check your inbox for the verification link.',
+        401
+      );
+    }
+
     // Block suspended accounts
     if (user.isSuspended) {
       return errorResponse(res, 'This account has been suspended. Please contact support.', 403);
@@ -258,6 +269,24 @@ const updateProfile = async (req, res) => {
     if (email)        updates.email        = email.toLowerCase();
     if (currency)     updates.currency     = currency;
     if (timezone)     updates.timezone     = timezone;
+
+    // Uniqueness checks — do these BEFORE the update so we return a clear
+    // error message instead of a raw MongoDB E11000 duplicate-key crash.
+    if (businessName) {
+      const taken = await User.findOne({
+        businessName: { $regex: new RegExp(`^${escapeRegex(businessName)}$`, 'i') },
+        _id: { $ne: req.user._id }   // exclude the current user from the check
+      });
+      if (taken) return errorResponse(res, 'That business name is already taken', 400);
+    }
+
+    if (email) {
+      const taken = await User.findOne({
+        email: email.toLowerCase(),
+        _id: { $ne: req.user._id }
+      });
+      if (taken) return errorResponse(res, 'That email is already registered to another account', 400);
+    }
 
     const user = await User.findByIdAndUpdate(
       req.user._id,

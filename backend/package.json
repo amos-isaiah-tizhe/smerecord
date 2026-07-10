@@ -1,7 +1,7 @@
 {
   "name": "sme-record-backend",
   "version": "1.0.0",
-  "description": "SME Record — Business Financial Ledger API",
+  "description": "SME Record \u2014 Business Financial Ledger API",
   "main": "app.js",
   "scripts": {
     "start": "node app.js",
@@ -12,7 +12,6 @@
     "node": ">=18.0.0"
   },
   "dependencies": {
-    "@upstash/ratelimit": "^2.0.8",
     "bcryptjs": "^2.4.3",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.6",

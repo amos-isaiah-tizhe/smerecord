@@ -25,7 +25,10 @@ form.onsubmit = async e => {
   }
 
   // Turnstile validation
-  if (!forgotToken) {
+  // On localhost Turnstile never fires its callback (error 300010), so
+  // forgotToken stays empty. Skip the guard in dev; enforce in production.
+  const _isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (!forgotToken && !_isDev) {
     msg.textContent = 'Please complete the bot check.';
     msg.classList.add('show');
     return;

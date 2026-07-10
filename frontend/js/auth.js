@@ -80,7 +80,11 @@ async function handleLogin() {
   }
 
   // Turnstile validation
-  if (!loginTurnstileToken) {
+  // On localhost Turnstile never fires its callback (error 300010 — site key
+  // not valid for localhost), so loginTurnstileToken stays empty and the form
+  // would block forever. Skip the guard in dev; production always enforces it.
+  const _isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (!loginTurnstileToken && !_isDev) {
     showAlert('Please complete the bot check.');
     return;
   }
@@ -168,7 +172,9 @@ async function handleRegister() {
   }
 
   // ── TURNSTILE CHECK ──
-  if (!registerTurnstileToken) {
+  // Same localhost bypass as handleLogin — see comment there.
+  const _isDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  if (!registerTurnstileToken && !_isDev) {
     showAlert('Please complete the bot check.');
     return;
   }

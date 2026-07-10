@@ -64,6 +64,75 @@ router.get('/me', protect, getMe);
 // PUT /api/auth/me  — update profile
 router.put('/me', protect, updateProfile);
 
+// PUT /api/auth/me/password — change password
+// Users previously had no way to change their password from the app.
+// The only alternative was the forgot-password email flow which requires
+// SMTP to be configured and working.
+router.put('/me/password',
+  protect,
+  [
+    body('currentPassword').notEmpty().withMessage('Current password is required'),
+    body('newPassword')
+      .isLength({ min: 6 }).withMessage('New password must be at least 6 characters')
+  ],
+  validate,
+  async (req, res) => {
+    try {
+      // We need passwordHash for comparison — it has select:false in the schema
+      const user = await User.findById(req.user._id).select('+passwordHash');
+      if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+      const isMatch = await user.comparePassword(req.body.currentPassword);
+      if (!isMatch) {
+        return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+      }
+
+      // The pre-save hook in User.js hashes this automatically
+      user.passwordHash = req.body.newPassword;
+      await user.save();
+
+      return res.json({ success: true, message: 'Password changed successfully' });
+    } catch (e) {
+      console.error('Change password error:', e);
+      return res.status(500).json({ success: false, message: 'Failed to change password' });
+    }
+  }
+);
+
+// DELETE /api/auth/me/data — clear all user data (transactions, books, categories)
+// Keeps the account itself. Re-creates a default record book so the user
+// isn't left with an empty dashboard.
+router.delete('/me/data',
+  protect,
+  async (req, res) => {
+    try {
+      const Transaction = require('../models/Transaction');
+      const RecordBook  = require('../models/RecordBook');
+      const Category    = require('../models/Category');
+      const User        = require('../models/User');
+
+      await Promise.all([
+        Transaction.deleteMany({ userId: req.user._id }),
+        RecordBook.deleteMany({ userId: req.user._id }),
+        Category.deleteMany({ userId: req.user._id })
+      ]);
+
+      // Re-create their default book so they land on a working dashboard
+      const user = await User.findById(req.user._id);
+      await RecordBook.create({
+        userId:   req.user._id,
+        name:     (user?.businessName || 'My Business') + ' — Main Book',
+        currency: user?.currency || 'NGN'
+      });
+
+      return res.json({ success: true, message: 'All your data has been cleared' });
+    } catch (e) {
+      console.error('Clear data error:', e);
+      return res.status(500).json({ success: false, message: 'Failed to clear data' });
+    }
+  }
+);
+
 // ── USER NOTIFICATIONS ────────────────────────────────────────────────────────
 
 // GET /api/auth/notifications — get notifications for logged-in user

@@ -79,6 +79,8 @@ const Auth = {
   login: (d) => api.post('/auth/login', d),
   me: () => api.get('/auth/me'),
   update: (d) => api.put('/auth/me', d),
+  changePassword: (d) => api.put('/auth/me/password', d),
+  clearMyData: () => api.delete('/auth/me/data'),
 
   logout() {
     removeToken(); removeSession();

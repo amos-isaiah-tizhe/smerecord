@@ -1224,9 +1224,67 @@ async function saveSettings() {
   } else { toast(res?.message || 'Failed to save', 'error'); }
 }
 
-function clearAllData() {
-  if (!confirm('This will delete ALL your transactions, categories, and books. This cannot be undone.\n\nAre you sure?')) return;
-  toast('Please contact support to clear all data.', 'info');
+async function changePassword() {
+  const currentEl = document.getElementById('settingCurrentPw');
+  const newEl     = document.getElementById('settingNewPw');
+  const confirmEl = document.getElementById('settingConfirmPw');
+
+  if (!currentEl || !newEl || !confirmEl) {
+    toast('Password fields not found', 'error');
+    return;
+  }
+
+  const current = currentEl.value;
+  const next    = newEl.value;
+  const confirm = confirmEl.value;
+
+  if (!current || !next || !confirm) {
+    toast('Please fill in all three password fields', 'error');
+    return;
+  }
+
+  if (next.length < 6) {
+    toast('New password must be at least 6 characters', 'error');
+    return;
+  }
+
+  if (next !== confirm) {
+    toast('New password and confirmation do not match', 'error');
+    return;
+  }
+
+  const res = await Auth.changePassword({ currentPassword: current, newPassword: next });
+
+  if (res?.success) {
+    // Clear the fields on success
+    currentEl.value = '';
+    newEl.value = '';
+    confirmEl.value = '';
+    toast('Password changed successfully', 'success');
+  } else {
+    toast(res?.message || 'Failed to change password', 'error');
+  }
+}
+
+async function clearAllData() {
+  if (!confirm(
+    'This will permanently delete ALL your transactions, categories, and record books.\n\n' +
+    'A fresh default book will be created for you.\n\n' +
+    'This cannot be undone. Are you sure?'
+  )) return;
+
+  // Second confirmation — this is destructive
+  if (!confirm('Are you absolutely sure? This cannot be reversed.')) return;
+
+  const res = await Auth.clearMyData();
+
+  if (res?.success) {
+    toast('All data cleared. Starting fresh!', 'info');
+    // Reload the full dashboard so books/transactions/categories all reflect the reset
+    await refreshDashboard();
+  } else {
+    toast(res?.message || 'Failed to clear data', 'error');
+  }
 }
 
 // ══════════════════════════════════════════════════════

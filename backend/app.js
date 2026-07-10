@@ -104,7 +104,11 @@ app.use(helmet({
 }));
 app.use(mongoSanitize());
 app.use(hpp());
-app.use(compression());
+// Compression is only useful in production; Render's CDN handles gzip on the
+// edge anyway. In dev, skipping it keeps responses faster to inspect.
+if (process.env.NODE_ENV === 'production') {
+  app.use(compression());
+}
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json({ limit: '100kb' }));
 app.use(express.urlencoded({ extended: true, limit: '100kb' }));
