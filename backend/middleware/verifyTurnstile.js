@@ -1,20 +1,15 @@
 'use strict';
-/**
- * middleware/verifyTurnstile.js
- * Verifies a Cloudflare Turnstile token sent from the frontend.
- * Expects req.body.turnstileToken (string).
- */
 
 const VERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
 module.exports = async function verifyTurnstile(req, res, next) {
-  try {
-    // Dev escape hatch — skip if no secret configured (local testing)
-    if (!process.env.TURNSTILE_SECRET_KEY) {
-      if (process.env.NODE_ENV !== 'production') return next();
-      return res.status(500).json({ success: false, message: 'Bot protection not configured' });
-    }
+  // Always skip in development
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('[Turnstile] Skipped — development mode');
+    return next();
+  }
 
+  try {
     const token = req.body?.turnstileToken;
     if (!token) {
       return res.status(400).json({ success: false, message: 'Please complete the bot check.' });
@@ -33,7 +28,6 @@ module.exports = async function verifyTurnstile(req, res, next) {
       return res.status(403).json({ success: false, message: 'Bot check failed. Please try again.' });
     }
 
-    // Strip the token so it doesn't pollute the rest of the controller
     delete req.body.turnstileToken;
     return next();
   } catch (err) {
