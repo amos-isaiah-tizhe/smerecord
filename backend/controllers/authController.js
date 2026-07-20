@@ -61,11 +61,12 @@ const register = async (req, res) => {
     // Send verification email — only in production
     // In development, auto-verify the user so you can test without email
     if (process.env.NODE_ENV === 'production') {
-      try {
-        await sendVerificationEmail(user, verificationToken);
-      } catch (emailError) {
-        console.warn('⚠️  Verification email failed to send:', emailError.message);
-      }
+      // Fire-and-forget — don't await the email so the user gets a response
+      // instantly instead of waiting 2-5 seconds for SMTP to respond.
+      // If the email fails, the user can request a new one. The account
+      // is already created so we should never block the response for this.
+      sendVerificationEmail(user, verificationToken)
+        .catch(err => console.warn('⚠️  Verification email failed:', err.message));
     } else {
       // Dev mode: auto-verify immediately so you don't need to click a link
       user.isVerified          = true;
@@ -197,14 +198,18 @@ const forgotPassword = async (req, res) => {
     user.resetPasswordExpiry = tokenExpiry;
     await user.save({ validateBeforeSave: false });
 
-    try {
-      await sendPasswordResetEmail(user, resetToken);
-    } catch (emailError) {
-      user.resetPasswordToken  = undefined;
-      user.resetPasswordExpiry = undefined;
-      await user.save({ validateBeforeSave: false });
-      return errorResponse(res, 'Failed to send reset email. Please try again.', 500);
-    }
+    // Fire-and-forget — respond immediately, don't block on SMTP
+    // If email fails, user can try again. Token is already saved in DB.
+    sendPasswordResetEmail(user, resetToken)
+      .catch(async (err) => {
+        console.warn('⚠️  Password reset email failed:', err.message);
+        // Clean up the token if email failed completely
+        try {
+          user.resetPasswordToken  = undefined;
+          user.resetPasswordExpiry = undefined;
+          await user.save({ validateBeforeSave: false });
+        } catch (_) { /* ignore cleanup error */ }
+      });
 
     return successResponse(res, null, 'Password reset link has been sent to your email.');
 
@@ -250,8 +255,23 @@ const resetPassword = async (req, res) => {
 // Requires: JWT token in Authorization header
 // ─────────────────────────────────────────
 const getMe = async (req, res) => {
-  // req.user is set by the protect middleware
-  return successResponse(res, { user: req.user.toPublicJSON() });
+  // req.user is a plain lean object (set by the protect middleware).
+  // We manually shape the public fields instead of calling toPublicJSON()
+  // since that method only exists on full Mongoose document instances.
+  const u = req.user;
+  return successResponse(res, {
+    user: {
+      id:           u._id,
+      fullName:     u.fullName,
+      businessName: u.businessName,
+      email:        u.email,
+      currency:     u.currency,
+      timezone:     u.timezone,
+      isVerified:   u.isVerified,
+      isSuspended:  u.isSuspended,
+      createdAt:    u.createdAt
+    }
+  });
 };
 
 // ─────────────────────────────────────────

@@ -1,5 +1,40 @@
 'use strict';
-require('dotenv').config({ path: require('path').join(__dirname, '.env') });
+
+// ── CLUSTER — use all available CPU cores ────────────────────────────────────
+// Node.js is single-threaded. Without clustering, one slow bcrypt hash or
+// MongoDB query can block everyone else. Clustering forks one worker per CPU
+// core so requests run in parallel.
+//
+// On Render's free plan you get a shared vCPU so this mainly helps locally
+// and on any paid plan with dedicated CPUs. It's harmless on single-core
+// machines (just runs as one process — same as before).
+// ─────────────────────────────────────────────────────────────────────────────
+const cluster = require('cluster');
+const os      = require('os');
+
+if (cluster.isPrimary) {
+  const cpuCount = os.cpus().length;
+  console.log(`\n🔀 Starting ${cpuCount} worker${cpuCount > 1 ? 's' : ''} (${cpuCount} CPU core${cpuCount > 1 ? 's' : ''} available)`);
+
+  // Fork one worker per CPU core
+  for (let i = 0; i < cpuCount; i++) {
+    cluster.fork();
+  }
+
+  // If a worker crashes for any reason, log it and immediately restart it
+  // so the server never goes down due to one bad request
+  cluster.on('exit', (worker, code, signal) => {
+    console.warn(`⚠️  Worker ${worker.process.pid} exited (${signal || code}). Restarting...`);
+    cluster.fork();
+  });
+
+  cluster.on('online', (worker) => {
+    console.log(`✅ Worker ${worker.process.pid} online`);
+  });
+
+} else {
+  // ── WORKER PROCESS — runs the actual Express app ──────────────────────────
+  require('dotenv').config({ path: require('path').join(__dirname, '.env') });
 
 // Fail fast if required env vars are missing
 const required = ['MONGO_URI', 'JWT_SECRET', 'ADMIN_JWT_SECRET'];
@@ -199,4 +234,4 @@ const PORT = parseInt(process.env.PORT, 10) || 5000;
   process.on('SIGINT', () => stop('SIGINT'));
 })();
 
-module.exports = app;
+} // end else (cluster worker)

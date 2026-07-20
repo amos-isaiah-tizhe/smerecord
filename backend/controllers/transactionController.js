@@ -8,6 +8,17 @@
 const Transaction = require('../models/Transaction');
 const { successResponse, errorResponse, escapeRegex } = require('../utils/helpers');
 
+// Import the books cache invalidator so that when a transaction is created,
+// updated, or deleted, the cached book totals are immediately busted.
+// Without this, book totals on the dashboard could show stale numbers for
+// up to 2 minutes after a transaction is logged.
+let invalidateBooksCache;
+try {
+  invalidateBooksCache = require('../routes/books').invalidateBooksCache;
+} catch (_) {
+  invalidateBooksCache = () => {}; // no-op fallback
+}
+
 // ─────────────────────────────────────────
 // CREATE TRANSACTION
 // POST /api/transactions
@@ -33,6 +44,9 @@ const createTransaction = async (req, res) => {
       referenceNumber: referenceNumber || '',
       tags:            tags || []
     });
+
+    // Bust the books cache — totals have changed
+    invalidateBooksCache(String(req.user._id));
 
     return successResponse(res, { transaction: tx }, 'Transaction saved', 201);
 
@@ -82,18 +96,20 @@ const getTransactions = async (req, res) => {
       ];
     }
 
-    // Pagination: skip past previous pages
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    // Build sort object
-    const sort = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
+    // Hard-cap limit to 100 — prevents a single request from pulling the
+    // entire transaction history (e.g. limit=999999 would hammer MongoDB
+    // and potentially exhaust Node's memory serialising the response).
+    const safeLimit = Math.min(Math.max(parseInt(limit) || 50, 1), 100);
+    const skip      = (parseInt(page) - 1) * safeLimit;
+    const sort      = { [sortBy]: sortOrder === 'asc' ? 1 : -1 };
 
     // Execute the query
     const [transactions, total] = await Promise.all([
       Transaction.find(filter)
         .sort(sort)
         .skip(skip)
-        .limit(parseInt(limit)),
+        .limit(safeLimit)
+        .lean(),
       Transaction.countDocuments(filter)
     ]);
 
@@ -102,8 +118,8 @@ const getTransactions = async (req, res) => {
       pagination: {
         total,
         page:       parseInt(page),
-        limit:      parseInt(limit),
-        totalPages: Math.ceil(total / parseInt(limit))
+        limit:      safeLimit,
+        totalPages: Math.ceil(total / safeLimit)
       }
     });
 
@@ -162,6 +178,9 @@ const updateTransaction = async (req, res) => {
 
     if (!tx) return errorResponse(res, 'Transaction not found', 404);
 
+    // Bust the books cache — totals may have changed
+    invalidateBooksCache(String(req.user._id));
+
     return successResponse(res, { transaction: tx }, 'Transaction updated');
 
   } catch (error) {
@@ -182,6 +201,9 @@ const deleteTransaction = async (req, res) => {
     );
 
     if (!tx) return errorResponse(res, 'Transaction not found', 404);
+
+    // Bust the books cache — totals have changed
+    invalidateBooksCache(String(req.user._id));
 
     return successResponse(res, null, 'Transaction deleted');
 

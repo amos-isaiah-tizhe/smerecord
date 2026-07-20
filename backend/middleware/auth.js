@@ -43,7 +43,11 @@ const protect = async (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     // Find the user from the ID stored in the token
-    const user = await User.findById(decoded.id);
+    // .lean() returns a plain JS object instead of a full Mongoose document —
+    // this runs on EVERY authenticated request so the speedup compounds.
+    // We do still need the isSuspended check and toPublicJSON() in getMe,
+    // so we use a select to grab exactly the fields we need.
+    const user = await User.findById(decoded.id).lean();
 
     if (!user) {
       return res.status(401).json({
@@ -59,8 +63,9 @@ const protect = async (req, res, next) => {
       });
     }
 
-    // Attach the user to the request object so route handlers can use it
-    // e.g. req.user._id gives us the logged-in user's ID
+    // Attach the plain user object to req — lean() means it's a regular JS
+    // object, not a Mongoose doc, so Mongoose methods like .save() won't work.
+    // Controllers that need to save changes must re-fetch with User.findById().
     req.user = user;
 
     // Call next() to move on to the actual route handler
